@@ -33,7 +33,7 @@ conda create --name flux python=3.12 -y
 conda activate flux
 
 pip install torch torchvision
-pip install transformers diffusers accelerate
+pip install transformers diffusers accelerate torchmetrics
 
 hf download black-forest-labs/FLUX.2-klein-4B
 hf download black-forest-labs/FLUX.2-klein-9B
