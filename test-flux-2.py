@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 import torch
-from diffusers import Flux2KleinPipeline
+from diffusers import Flux2Pipeline
 from PIL import Image
 from tqdm import tqdm
 
@@ -12,8 +12,8 @@ def main(args):
     device = "cuda"
     dtype = torch.bfloat16
 
-    pipe = Flux2KleinPipeline.from_pretrained(args.model_name, torch_dtype=dtype)
-    pipe.enable_model_cpu_offload()  # save some VRAM by offloading the model to CPU
+    pipe = Flux2Pipeline.from_pretrained(args.model_name, torch_dtype=dtype)
+    pipe.enable_sequential_cpu_offload()  # more aggressive offloading to reduce VRAM usage
 
     input_folder = Path(args.input_folder)
     input_paths = list(input_folder.glob("*.jpg"))
@@ -70,13 +70,13 @@ argparser.add_argument(
 argparser.add_argument(
     "--num_inference_steps",
     type=int,
-    default=4,
+    default=50,
     help="Number of inference steps to use for image generation.",
 )
 argparser.add_argument(
     "--guidance_scale",
     type=float,
-    default=1.0,
+    default=4.0,
     help="Guidance scale to use for image generation.",
 )
 
