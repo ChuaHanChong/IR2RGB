@@ -8,15 +8,13 @@ from pathlib import Path
 
 import torch
 from PIL import Image
-from tabulate import tabulate as _tabulate
+from tabulate import tabulate
 from torchmetrics.image import (
     FrechetInceptionDistance,
     PeakSignalNoiseRatio,
     StructuralSimilarityIndexMeasure,
 )
 from torchvision import transforms
-
-IMAGE_EXTENSIONS = {".jpg"}
 
 # Shared resize + to-tensor pipeline: PIL → float32 [0,1] [C,H,W] at 224×224
 _to_float = transforms.Compose(
@@ -42,8 +40,8 @@ def find_image_pairs(gen_dir: str, gt_dir: str) -> list[tuple[str, str]]:
     if not gt_path.is_dir():
         raise ValueError(f"Ground-truth directory not found: {gt_dir}")
 
-    gen_files = {f.stem: f for f in sorted(gen_path.iterdir()) if f.suffix.lower() in IMAGE_EXTENSIONS}
-    gt_files = {f.stem: f for f in sorted(gt_path.iterdir()) if f.suffix.lower() in IMAGE_EXTENSIONS}
+    gen_files = {f.stem: f for f in sorted(gen_path.rglob("*.jpg"))}
+    gt_files = {f.stem: f for f in sorted(gt_path.rglob("*.jpg"))}
 
     pairs = []
     for stem, gen_file in sorted(gen_files.items()):
@@ -140,7 +138,7 @@ def format_table(rows: list[dict]) -> str:
         ]
     )
 
-    return _tabulate(table_rows, headers=headers, tablefmt="github")
+    return tabulate(table_rows, headers=headers, tablefmt="github")
 
 
 def build_json_output(
@@ -187,7 +185,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda"
     print(f"Using device: {device}")
 
     pairs = find_image_pairs(args.gen, args.gt)
