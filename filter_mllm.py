@@ -9,10 +9,11 @@ import outlines
 import pandas as pd
 import PIL
 import torch
+import transformers
 from outlines.inputs import Chat, Image
 from pydantic import BaseModel
 from tqdm import tqdm
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+from transformers import AutoConfig, AutoProcessor
 
 
 class OutputResponse(BaseModel):
@@ -37,7 +38,7 @@ def main(args):
         print("Nothing to do.")
         return
 
-    hf_model = Qwen3VLForConditionalGeneration.from_pretrained(
+    hf_model = getattr(transformers, AutoConfig.from_pretrained(args.model_id).architectures[0]).from_pretrained(
         args.model_id,
         dtype=torch.bfloat16,
         attn_implementation="flash_attention_2",
