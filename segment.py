@@ -41,6 +41,11 @@ def main(args):
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     for input_path in tqdm(input_paths, desc="Segmenting images"):
+        relative_path = input_path.relative_to(input_folder)
+        output_path = output_folder / relative_path.with_suffix(".png")
+        if output_path.exists():
+            continue
+
         try:
             image = Image.open(input_path).convert("RGB")
             inputs = processor(images=image, text=args.text, return_tensors="pt").to(device)
@@ -50,8 +55,8 @@ def main(args):
 
             results = processor.post_process_instance_segmentation(
                 outputs,
-                threshold=0.3,
-                mask_threshold=0.5,
+                threshold=args.threshold,
+                mask_threshold=args.mask_threshold,
                 target_sizes=inputs.get("original_sizes").tolist()
             )[0]
 
@@ -62,15 +67,16 @@ def main(args):
                 print(f"No masks found, skipping: {input_path}")
                 continue
 
-            sorted_ind = np.argsort(scores)[::-1]
-            top_mask = masks[sorted_ind[0]].astype(np.uint8)
-            refined_top_mask = refine_mask(top_mask)
+            if args.merge_masks:
+                merged = np.any(masks, axis=0).astype(np.uint8)
+                final_mask = refine_mask(merged)
+            else:
+                sorted_ind = np.argsort(scores)[::-1]
+                top_mask = masks[sorted_ind[0]].astype(np.uint8)
+                final_mask = refine_mask(top_mask)
 
-            relative_path = input_path.relative_to(input_folder)
-            output_path = output_folder / relative_path.with_suffix(".png")
-            if not output_path.parent.exists():
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-            Image.fromarray(refined_top_mask * 255).save(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(final_mask * 255).save(output_path)
         
         except Exception as e:
             print(f"Error processing {input_path.name}: {e}")
@@ -83,6 +89,9 @@ if __name__ == "__main__":
     parser.add_argument("--input_folder", required=True, help="Folder containing input images.")
     parser.add_argument("--output_folder", required=True, help="Folder to save output masks.")
     parser.add_argument("--text", default="object", help="Text prompt for segmentation.")
+    parser.add_argument("--threshold", type=float, default=0.3, help="Confidence threshold for detections.")
+    parser.add_argument("--mask_threshold", type=float, default=0.5, help="Mask binarization threshold.")
+    parser.add_argument("--merge_masks", action="store_true", help="Merge all detected masks instead of using only the top-scoring one.")
     args = parser.parse_args()
 
     main(args)
