@@ -1,42 +1,52 @@
 import argparse
-import os
 from pathlib import Path
 
 import torch
-from diffusers import Flux2KleinPipeline
+from diffusers import Flux2KleinPipeline, Flux2Pipeline
 from PIL import Image
 from tqdm import tqdm
 
 
 def main(args):
+    input_folder = Path(args.input_folder)
+    input_paths = sorted(input_folder.rglob("*.jpg"))
+    if not input_paths:
+        print(f"No .jpg images found under {args.input_folder}")
+        return
+
     device = "cuda"
     dtype = torch.bfloat16
 
-    pipe = Flux2KleinPipeline.from_pretrained(args.model_name, torch_dtype=dtype)
+    if args.model_name in ["black-forest-labs/FLUX.2-klein-4B", "black-forest-labs/FLUX.2-klein-9B"]:
+        pipe = Flux2KleinPipeline.from_pretrained(args.model_name, torch_dtype=dtype)
+    elif args.model_name == "black-forest-labs/FLUX.2-dev":
+        pipe = Flux2Pipeline.from_pretrained(args.model_name, torch_dtype=dtype)
+    else:
+        print(f"Unsupported model name: {args.model_name}")
+        return
+    
     pipe.enable_model_cpu_offload()  # save some VRAM by offloading the model to CPU
 
-    input_folder = Path(args.input_folder)
-    input_paths = list(input_folder.glob("*.jpg"))
-
     output_folder = Path(args.output_folder)
-    os.makedirs(output_folder, exist_ok=True)
-
-    for input_path in tqdm(input_paths, total=len(input_paths)):
+    output_folder.mkdir(parents=True, exist_ok=True)
+    for input_path in tqdm(input_paths, desc="Generating images"):
         try:
-            image_path = input_path
-            output_path = output_folder / input_path.name
-
             with torch.inference_mode():
                 ouput_image = pipe(
                     prompt=args.prompt,
-                    image=[Image.open(image_path).convert("RGB")],
+                    image=[Image.open(input_path).convert("RGB")],
                     height=1024,
                     width=1024,
                     guidance_scale=args.guidance_scale,
                     num_inference_steps=args.num_inference_steps,
                     generator=torch.Generator(device=device).manual_seed(0),
                 ).images[0]
-                ouput_image.save(output_path)
+
+            relative_path = input_path.relative_to(input_folder)
+            output_path = output_folder / relative_path
+            if not output_path.parent.exists():
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+            ouput_image.save(output_path)
 
         except Exception as e:
             print(f"Error processing {input_path.name}: {e}")
