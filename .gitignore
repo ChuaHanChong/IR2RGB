@@ -1,4 +1,6 @@
+__archive__
 data/
 docs/
 logs/
+utils/*py
 .env

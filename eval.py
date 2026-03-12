@@ -167,24 +167,11 @@ def build_json_output(
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Main execution
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate IR image reconstruction quality using TorchMetrics.")
-    parser.add_argument("--gen", required=True, help="Folder of generated IR images.")
-    parser.add_argument("--gt", required=True, help="Folder of ground-truth IR images.")
-    parser.add_argument(
-        "--output",
-        default="eval_results.json",
-        help="Path to save JSON results (default: eval_results.json).",
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
+def main(args: argparse.Namespace) -> None:
     device = "cuda"
     print(f"Using device: {device}")
 
@@ -228,4 +215,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Evaluate IR image reconstruction quality using TorchMetrics.")
+    parser.add_argument("--gen", required=True, help="Folder of generated IR images.")
+    parser.add_argument("--gt", required=True, help="Folder of ground-truth IR images.")
+    parser.add_argument(
+        "--output",
+        default="eval_results.json",
+        help="Path to save JSON results (default: eval_results.json).",
+    )
+
+    args = parser.parse_args()
+    main(args)
