@@ -5,3 +5,4 @@ docs/
 logs/
 utils/*py
 .env
+TODO.md

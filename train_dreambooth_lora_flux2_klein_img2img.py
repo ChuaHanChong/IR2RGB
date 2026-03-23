@@ -488,6 +488,12 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
+        "--pretrained_lora_path",
+        type=str,
+        default=None,
+        help="Path to pre-trained LoRA weights to initialize from (for progressive resolution training).",
+    )
+    parser.add_argument(
         "--gradient_accumulation_steps",
         type=int,
         default=1,
@@ -1048,10 +1054,11 @@ def main(args):
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
     kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    log_with = None if (args.report_to is None or args.report_to.lower() == "none") else args.report_to
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
-        log_with=args.report_to,
+        log_with=log_with,
         project_config=accelerator_project_config,
         kwargs_handlers=[kwargs],
     )
@@ -1215,6 +1222,48 @@ def main(args):
         target_modules=target_modules,
     )
     transformer.add_adapter(transformer_lora_config)
+
+    # Load pre-trained LoRA weights for progressive training
+    if args.pretrained_lora_path:
+        from safetensors.torch import load_file
+        pretrained_state = load_file(
+            os.path.join(args.pretrained_lora_path, "pytorch_lora_weights.safetensors")
+            if os.path.isdir(args.pretrained_lora_path)
+            else args.pretrained_lora_path
+        )
+        # Remap key names: saved format "transformer.xxx.lora_A.weight" →
+        # model adapter format "xxx.lora_A.default.weight"
+        model_state = transformer.state_dict()
+        matched = {}
+        rank_expanded = 0
+        for k, v in pretrained_state.items():
+            # Try direct match first
+            if k in model_state and model_state[k].shape == v.shape:
+                matched[k] = v
+                continue
+            # Remap: strip "transformer." prefix, add ".default" before ".weight"
+            rk = k
+            if rk.startswith("transformer."):
+                rk = rk[len("transformer."):]
+            rk = rk.replace(".lora_A.weight", ".lora_A.default.weight")
+            rk = rk.replace(".lora_B.weight", ".lora_B.default.weight")
+            if rk in model_state and model_state[rk].shape == v.shape:
+                matched[rk] = v
+            elif rk in model_state:
+                # Rank expansion: zero-pad smaller LoRA into larger LoRA
+                target_shape = model_state[rk].shape
+                src_shape = v.shape
+                if len(target_shape) == 2 and len(src_shape) == 2:
+                    expanded = torch.zeros(target_shape, dtype=v.dtype, device=v.device)
+                    min_r = min(target_shape[0], src_shape[0])
+                    min_c = min(target_shape[1], src_shape[1])
+                    expanded[:min_r, :min_c] = v[:min_r, :min_c]
+                    matched[rk] = expanded
+                    rank_expanded += 1
+        if rank_expanded > 0:
+            logger.info(f"[RANK {accelerator.process_index}] Rank-expanded {rank_expanded} LoRA parameters (zero-padded)")
+        logger.info(f"[RANK {accelerator.process_index}] Loading {len(matched)}/{len(pretrained_state)} pre-trained LoRA parameters")
+        transformer.load_state_dict(matched, strict=False)
 
     def unwrap_model(model):
         model = accelerator.unwrap_model(model)

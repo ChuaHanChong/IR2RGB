@@ -1,9 +1,11 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from diffusers import Flux2KleinPipeline, Flux2Pipeline
 from PIL import Image
+from skimage import exposure
 from tqdm import tqdm
 
 
@@ -27,36 +29,55 @@ def main(args):
 
     if args.lora_weights:
         pipe.load_lora_weights(args.lora_weights)
-        print(f"Loaded LoRA weights from {args.lora_weights}")
+        pipe.fuse_lora()
+        pipe.unload_lora_weights()
+        print(f"Loaded and fused LoRA weights from {args.lora_weights}")
 
-    pipe.enable_model_cpu_offload()  # save some VRAM by offloading the model to CPU
+    pipe.enable_model_cpu_offload()
 
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     for input_path in tqdm(input_paths, desc="Generating images"):
         try:
+            input_image = Image.open(input_path).convert("RGB")
+            w_in, h_in = input_image.size
+            gen_h = args.height if args.height is not None else h_in
+            gen_w = args.width if args.width is not None else w_in
+
             with torch.inference_mode():
-                ouput_image = pipe(
+                output_image = pipe(
                     prompt=args.prompt,
-                    image=[Image.open(input_path).convert("RGB")],
-                    height=1024,
-                    width=1024,
+                    image=[input_image],
+                    height=gen_h,
+                    width=gen_w,
                     guidance_scale=args.guidance_scale,
                     num_inference_steps=args.num_inference_steps,
                     generator=torch.Generator(device=device).manual_seed(args.seed),
                 ).images[0]
 
             relative_path = input_path.relative_to(input_folder)
-            output_path = output_folder / relative_path
-            if not output_path.parent.exists():
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-            ouput_image.save(output_path)
+
+            # Save grayscale (default)
+            gray_img = output_image.convert("L")
+            if args.contrast_stretch:
+                arr = np.array(gray_img)
+                p2, p98 = np.percentile(arr, (2, 98))
+                gray_img = Image.fromarray(exposure.rescale_intensity(arr, in_range=(p2, p98)))
+            gray_path = output_folder / relative_path
+            gray_path.parent.mkdir(parents=True, exist_ok=True)
+            gray_img.save(gray_path)
+
+            # Optionally also save RGB to a separate folder
+            if args.rgb_folder:
+                rgb_path = Path(args.rgb_folder) / relative_path
+                rgb_path.parent.mkdir(parents=True, exist_ok=True)
+                output_image.save(rgb_path)
 
         except Exception as e:
             print(f"Error processing {input_path.name}: {e}")
 
 
-argparser = argparse.ArgumentParser(description="Qwen-Image Edit Inference Script")
+argparser = argparse.ArgumentParser(description="FLUX.2 Image-to-Image Inference Script")
 argparser.add_argument(
     "--input_folder",
     type=str,
@@ -104,6 +125,30 @@ argparser.add_argument(
     type=str,
     default=None,
     help="Path to LoRA weights directory (containing pytorch_lora_weights.safetensors).",
+)
+argparser.add_argument(
+    "--height",
+    type=int,
+    default=None,
+    help="Height of generated images. If not set, matches input image height.",
+)
+argparser.add_argument(
+    "--width",
+    type=int,
+    default=None,
+    help="Width of generated images. If not set, matches input image width.",
+)
+argparser.add_argument(
+    "--contrast_stretch",
+    action="store_true",
+    default=False,
+    help="Apply contrast stretching (p2/p98 rescale) to grayscale output.",
+)
+argparser.add_argument(
+    "--rgb_folder",
+    type=str,
+    default=None,
+    help="If set, also save RGB output to this folder (in addition to grayscale in --output_folder).",
 )
 
 args = argparser.parse_args()
