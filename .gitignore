@@ -1,5 +1,6 @@
 __archive__/
 __pycache__/
+.claude/agent-memory-local/
 data/
 docs/
 logs/

@@ -16,10 +16,10 @@ from torchmetrics.image import (
 )
 from torchvision import transforms
 
-# Shared resize + to-tensor pipeline: PIL → float32 [0,1] [C,H,W] at 224×224
+# Shared resize + to-tensor pipeline: PIL → float32 [0,1] [C,H,W] at 256×256
 _to_float = transforms.Compose(
     [
-        transforms.Resize((224, 224)),
+        transforms.Resize((256, 256)),
         transforms.ToTensor(),
     ]
 )
@@ -62,7 +62,7 @@ def find_image_pairs(gen_dir: str, gt_dir: str) -> list[tuple[str, str]]:
 
 
 def load_image_float(path: str) -> torch.Tensor:
-    """Load image as float32 tensor [3, 224, 224] with values in [0, 1]."""
+    """Load image as float32 tensor [3, 256, 256] with values in [0, 1]."""
     img = Image.open(path).convert("RGB")
     return _to_float(img)
 

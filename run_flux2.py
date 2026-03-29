@@ -140,9 +140,9 @@ argparser.add_argument(
 )
 argparser.add_argument(
     "--contrast_stretch",
-    action="store_true",
-    default=False,
-    help="Apply contrast stretching (p2/p98 rescale) to grayscale output.",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Apply contrast stretching (p2/p98 rescale) to grayscale output. Use --no-contrast_stretch to disable.",
 )
 argparser.add_argument(
     "--rgb_folder",
