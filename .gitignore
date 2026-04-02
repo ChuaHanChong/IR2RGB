@@ -1,6 +1,7 @@
 __archive__/
 __pycache__/
 .claude/agent-memory-local/
+.claude/ml-optimizer.json
 data/
 docs/
 logs/
