@@ -116,6 +116,11 @@ def main(args):
                     if cond_path.exists():
                         cond_img = np.array(Image.open(cond_path).convert("L"), dtype=np.float32) / 255.0
                         cond_tensor = torch.from_numpy(cond_img).unsqueeze(0).unsqueeze(0).to(device)
+                        # Resize cond to match FLUX output dimensions (FLUX rounds to nearest 16)
+                        if cond_tensor.shape[2:] != flux_tensor.shape[2:]:
+                            cond_tensor = torch.nn.functional.interpolate(
+                                cond_tensor, size=flux_tensor.shape[2:], mode="bilinear", align_corners=False
+                            )
                     else:
                         # Fallback: replicate FLUX input
                         cond_tensor = flux_tensor
