@@ -33,13 +33,26 @@ def main(args):
         pipe.unload_lora_weights()
         print(f"Loaded and fused LoRA weights from {args.lora_weights}")
 
-    pipe.enable_model_cpu_offload()
+    if args.cpu_offload:
+        pipe.enable_model_cpu_offload()
+    else:
+        pipe.to(device)
 
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     for input_path in tqdm(input_paths, desc="Generating images"):
         try:
-            input_image = Image.open(input_path).convert("RGB")
+            relative_path = input_path.relative_to(input_folder)
+            gray_path = output_folder / relative_path
+            rgb_path = (Path(args.rgb_folder) / relative_path) if args.rgb_folder else None
+            # Skip if outputs already exist (idempotent restart)
+            if gray_path.exists() and (rgb_path is None or rgb_path.exists()):
+                continue
+
+            if args.input_grayscale:
+                input_image = Image.open(input_path).convert("L").convert("RGB")
+            else:
+                input_image = Image.open(input_path).convert("RGB")
             w_in, h_in = input_image.size
             gen_h = args.height if args.height is not None else h_in
             gen_w = args.width if args.width is not None else w_in
@@ -55,21 +68,17 @@ def main(args):
                     generator=torch.Generator(device=device).manual_seed(args.seed),
                 ).images[0]
 
-            relative_path = input_path.relative_to(input_folder)
-
             # Save grayscale (default)
             gray_img = output_image.convert("L")
             if args.contrast_stretch:
                 arr = np.array(gray_img)
                 p2, p98 = np.percentile(arr, (2, 98))
                 gray_img = Image.fromarray(exposure.rescale_intensity(arr, in_range=(p2, p98)))
-            gray_path = output_folder / relative_path
             gray_path.parent.mkdir(parents=True, exist_ok=True)
             gray_img.save(gray_path)
 
             # Optionally also save RGB to a separate folder
-            if args.rgb_folder:
-                rgb_path = Path(args.rgb_folder) / relative_path
+            if args.rgb_folder and rgb_path is not None:
                 rgb_path.parent.mkdir(parents=True, exist_ok=True)
                 output_image.save(rgb_path)
 
@@ -149,6 +158,17 @@ argparser.add_argument(
     type=str,
     default=None,
     help="If set, also save RGB output to this folder (in addition to grayscale in --output_folder).",
+)
+argparser.add_argument(
+    "--input_grayscale",
+    action="store_true",
+    help="Convert input to grayscale (L) and back to RGB before passing to FLUX. Use when LoRA was trained on grayscale-as-RGB inputs.",
+)
+argparser.add_argument(
+    "--cpu_offload",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Use enable_model_cpu_offload (slower, less GPU memory). Use --no-cpu_offload for full-GPU mode.",
 )
 
 args = argparser.parse_args()
